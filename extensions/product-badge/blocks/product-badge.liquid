@@ -1,0 +1,20 @@
+{% assign badge = product.metafields["$app"].badge_config.value %}
+{% assign selected_variant_id = product.selected_or_first_available_variant.id | append: '' %}
+
+{% if badge and badge.enabled %}
+  {% if badge.variantLegacyId == blank or badge.variantLegacyId == selected_variant_id %}
+    <span class="product-badge-manager__badge" style="--pbm-background: {{ badge.background | escape }}; --pbm-colour: {{ badge.color | escape }};" {{ block.shopify_attributes }}>
+      {{ badge.label | escape }}
+    </span>
+  {% endif %}
+{% endif %}
+
+{% schema %}
+{
+  "name": "Product badge",
+  "target": "section",
+  "stylesheet": "product-badge.css",
+  "templates": ["product"],
+  "settings": []
+}
+{% endschema %}

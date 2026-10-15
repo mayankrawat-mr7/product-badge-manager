@@ -1,0 +1,15 @@
+.product-badge-manager__badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin: 0 0 1rem;
+  padding: 0.65rem 1.1rem;
+  border-radius: 999px;
+  background: var(--pbm-background, #1F6B43);
+  color: var(--pbm-colour, #FFFFFF);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
