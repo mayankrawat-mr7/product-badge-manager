@@ -10,6 +10,7 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
+  // Protect every nested /app route and establish the authenticated Shopify session.
   await authenticate.admin(request);
 
   return {
@@ -20,6 +21,7 @@ export const loader = async ({ request }) => {
 export default function App() {
   const { apiKey } = useLoaderData();
 
+  // AppProvider supplies App Bridge context to the embedded admin UI.
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
@@ -31,6 +33,7 @@ export default function App() {
 }
 
 export function ErrorBoundary() {
+  // Convert authentication and nested-route failures into Shopify's standard error UI.
   return boundary.error(useRouteError());
 }
 

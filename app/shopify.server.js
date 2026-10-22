@@ -7,6 +7,7 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 
+// Log presence (not secret values) to make local configuration problems easy to spot.
 console.log("Shopify configuration check:", {
   apiKeyPresent: Boolean(process.env.SHOPIFY_API_KEY),
   apiSecretPresent: Boolean(process.env.SHOPIFY_API_SECRET),
@@ -14,6 +15,7 @@ console.log("Shopify configuration check:", {
   scopes: process.env.SCOPES || "(missing)",
 });
 
+// Create the single Shopify app instance used by authentication, webhooks, and API calls.
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
@@ -21,6 +23,7 @@ const shopify = shopifyApp({
   scopes: process.env.SCOPES?.split(","),
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
+  // Store Shopify sessions in the app database so sessions survive server restarts.
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
   future: {
@@ -31,6 +34,7 @@ const shopify = shopifyApp({
     : {}),
 });
 
+// Re-export the configured helpers so route modules share the same app configuration.
 export default shopify;
 export const apiVersion = ApiVersion.July26;
 export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;

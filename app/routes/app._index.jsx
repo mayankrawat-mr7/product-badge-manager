@@ -13,7 +13,7 @@ import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 import { parseBadgeInput } from "../lib/badge-input.server";
 
-/* GraphQL query used to load products and variants. */
+// Load the product choices shown in the badge form, including variant IDs.
 const PRODUCTS_QUERY = `#graphql
   query ProductBadgeProducts {
     products(first: 25, sortKey: TITLE) {
@@ -31,11 +31,14 @@ const PRODUCTS_QUERY = `#graphql
     }
   }
 `;
+// The app-owned metafield is the bridge between saved settings and the storefront block.
 const BADGE_METAFIELD = { namespace: "$app", key: "badge_config" };
 
 export const loader = async ({ request }) => {
+  // Authenticate once, then scope every database query to the current shop.
   const { admin, session } = await authenticate.admin(request);
 
+  // These independent reads run together so the page loads as quickly as possible.
   const [badges, auditLogs, response] = await Promise.all([
     prisma.badge.findMany({
       where: { shop: session.shop },
@@ -49,6 +52,7 @@ export const loader = async ({ request }) => {
     admin.graphql(PRODUCTS_QUERY),
   ]);
 
+  // Shopify returns GraphQL errors separately from the product data.
   const payload = await response.json();
 
   return {
@@ -60,18 +64,21 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
+  // All form submissions use one endpoint and are dispatched by the hidden intent field.
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get("intent")?.toString();
 
   try {
     if (intent === "save") {
+      // Normalize and validate user input before resolving live Shopify resources.
       const { input, error: inputError } = parseBadgeInput(formData);
       if (inputError) return { error: inputError };
 
       const target = await resolveBadgeTarget(admin, input);
       if (target.error) return target;
 
+      // Store display data locally so the admin list does not need another API request.
       const values = {
         shop: session.shop,
         productId: target.product.id,
@@ -83,6 +90,7 @@ export const action = async ({ request }) => {
         enabled: true,
       };
 
+      // One product has one saved badge configuration; update it when it already exists.
       const existing = await prisma.badge.findFirst({
         where: {
           shop: session.shop,
@@ -99,6 +107,7 @@ export const action = async ({ request }) => {
             data: values,
           });
 
+      // Publish the same configuration to Shopify for the storefront app block to read.
       const error = await syncMetafield(admin, badge);
 
       if (error) {
@@ -114,6 +123,7 @@ export const action = async ({ request }) => {
         },
       );
     } else if (intent === "toggle") {
+      // Toggling updates both the local status and the storefront metafield.
       const badge = await findBadge(
         session.shop,
         formData.get("id"),
@@ -140,6 +150,7 @@ export const action = async ({ request }) => {
         { badgeId: badge.id },
       );
     } else if (intent === "delete") {
+      // Remove the storefront data before deleting the local record.
       const badge = await findBadge(
         session.shop,
         formData.get("id"),
@@ -176,6 +187,7 @@ export const action = async ({ request }) => {
 
     return { success: intent === "save" };
   } catch (error) {
+    // Convert unexpected failures into a safe message the page can display.
     console.error("Badge action failed:", error);
 
     return {
@@ -188,18 +200,21 @@ export const action = async ({ request }) => {
 };
 
 export default function BadgeManagerHome() {
+  // Loader data drives the dashboard; action data contains the result of the latest form submission.
   const { badges, auditLogs, products, productError } = useLoaderData();
 
   const actionData = useActionData();
   const shopify = useAppBridge();
   const active = badges.filter(({ enabled }) => enabled).length;
 
+  // Close the create modal only after the save action completed successfully.
   useEffect(() => {
     if (actionData?.success) {
       shopify.modal.hide("new-badge");
     }
   }, [actionData, shopify]);
 
+  // Flatten nested product variants into the shape needed by the variant selector.
   const variants = products.flatMap(({ id: productId, title: productTitle, variants }) =>
     variants.nodes.map((variant) => ({ ...variant, productId, productTitle })),
   );
@@ -406,6 +421,7 @@ export default function BadgeManagerHome() {
 }
 
 function BadgeRow({ badge }) {
+  // Present one saved configuration and provide small forms for its actions.
   return (
     <s-table-row>
       <s-table-cell>
@@ -485,6 +501,7 @@ function BadgeRow({ badge }) {
 }
 
 function Metric({ label, value }) {
+  // Reusable dashboard statistic card.
   return (
     <s-box
       padding="base"
@@ -499,12 +516,14 @@ function Metric({ label, value }) {
 }
 
 function eventText(event) {
+  // Turn stored event keys into short labels suitable for the activity feed.
   return event
     .replace("badge.", "Badge ")
     .replace("webhook.", "Webhook ");
 }
 
 function audit(shop, event, details) {
+  // Record changes and webhook events for the current shop's activity history.
   return prisma.auditLog.create({
     data: {
       shop,
@@ -515,9 +534,11 @@ function audit(shop, event, details) {
 }
 
 const findBadge = (shop, id) =>
+  // Always include shop in the lookup so one shop cannot act on another shop's badge.
   prisma.badge.findFirst({ where: { id: id?.toString(), shop } });
 
 async function resolveBadgeTarget(admin, input) {
+  // Re-fetch the selected resources from Shopify; submitted form data is not trusted.
   if (!input.variantId) {
     const response = await admin.graphql(
       `#graphql
@@ -576,6 +597,7 @@ async function resolveBadgeTarget(admin, input) {
 }
 
 async function syncMetafield(admin, badge) {
+  // Upsert the JSON consumed by the storefront app block on the product.
   const response = await admin.graphql(
     `#graphql
       mutation SetBadge($metafields: [MetafieldsSetInput!]!) {
@@ -624,6 +646,7 @@ async function syncMetafield(admin, badge) {
 }
 
 async function clearMetafield(admin, ownerId) {
+  // Remove the product metafield when a badge is deleted.
   const response = await admin.graphql(
     `#graphql
       mutation ClearBadge(
@@ -669,6 +692,7 @@ export const headers = (headersArgs) =>
   boundary.headers(headersArgs);
 
 export function ErrorBoundary() {
+  // Present route, network, and unexpected errors inside the embedded app shell.
   const error = useRouteError();
 
   const message = isRouteErrorResponse(error)
